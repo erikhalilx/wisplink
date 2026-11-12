@@ -1,3 +1,4 @@
+from importlib.metadata import version
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet
@@ -63,4 +64,14 @@ def create_app(settings: Settings | None = None):
     app.include_router(account.router)
     app.include_router(publication.router)
     app.include_router(preview.router)
+
+    @app.get("/api/v1/instance")
+    def instance():
+        return {
+            "product": "wisplink",
+            "version": version("wisplink"),
+            "api_version": 1,
+            "console_origin": settings.console_origin,
+        }
+
     return app

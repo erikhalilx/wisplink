@@ -2,7 +2,15 @@
 
 [简体中文](README.md)
 
+**v0.2.0 compatibility** · Apple silicon Mac (macOS) for the local Agent and CLI, and Alibaba Cloud ECS with Alibaba Cloud Linux 3.2104 LTS (x86_64) for the server.
+
 WispLink is a self-hosted service for sharing single-file HTML previews. Publish from the web console or the macOS CLI. A visitor uses one public IP slot after clicking **Open preview**. The preview runs in a sandboxed iframe on a separate site.
+
+## Start with an Agent
+
+Install the [WispLink skill](.agents/skills/wisplink) in your local Agent and ask it to set up WispLink. For an existing instance, the skill guides CLI installation, verifies the console address, and opens browser authorization. For a first installation, the [Alibaba Cloud ECS setup guide](deploy/AGENT-SETUP.md) covers the host, domains, certificates, and versioned deployment script.
+
+After authorization, ask the Agent to publish an HTML file as a preview.
 
 ## Run locally
 
@@ -36,15 +44,14 @@ Open the [local console](http://localhost:5173). Local preview links use `127.0.
 Install from the source directory. Replace the example URL with your own console's HTTPS address and sign in to that instance.
 
 ```bash
-git clone https://github.com/Erikhalilx/wisplink.git
+git clone --branch v0.2.0 https://github.com/Erikhalilx/wisplink.git
 cd wisplink
 uv tool install .
-wisplink config set-server https://console.example.com
-wisplink login
+wisplink connect https://console.example.com
 wisplink publish ./report.html --ttl 24h --max-ips 10 --json
 ```
 
-The CLI requires an explicit server address. Browser authorization stores credentials in the macOS Keychain. Use `wisplink config set-defaults` to set local defaults. The CLI records the absolute source path by default. Use `--no-path` to omit it or `--path-note` to supply a note. Use either a preset `--ttl` or an ISO 8601 timestamp with a timezone via `--expires-at`.
+The CLI requires an explicit server address. The `connect` command verifies the console and starts browser authorization. Credentials are stored in the macOS Keychain. To connect to a confirmed v0.1.0 instance, use `wisplink connect https://console.example.com --legacy`. Use `wisplink config set-defaults` to set local defaults. The CLI records the absolute source path by default. Use `--no-path` to omit it or `--path-note` to supply a note. Use either a preset `--ttl` or an ISO 8601 timestamp with a timezone via `--expires-at`.
 
 Codex can discover the [WispLink skill](.agents/skills/wisplink/SKILL.md) in this repository. To use it in a local WorkBuddy task, import the skill directory and give the task access to the file and local terminal.
 

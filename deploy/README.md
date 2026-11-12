@@ -1,5 +1,7 @@
 # Linux 原生部署
 
+v0.2.0 的 Agent 部署流程适用于阿里云 ECS、Alibaba Cloud Linux 3.2104 LTS（x86_64）。通过 Agent 首次安装时见 [Agent 部署指南](AGENT-SETUP.md)。
+
 本手册适用于使用 Nginx 和 systemd 的 Linux 主机。为控制台和预览服务分别配置域名，例如 `console.example.com` 和 `preview.example.com`。启用公网访问前，请确认两个域名都已解析到部署主机，并为它们配置 HTTPS 证书。
 
 ## 安装

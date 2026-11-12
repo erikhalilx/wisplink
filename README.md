@@ -2,7 +2,15 @@
 
 [English](README.en.md)
 
+**v0.2.0 适配范围** · 本地 Apple 芯片 Mac（macOS），服务器为阿里云 ECS + Alibaba Cloud Linux 3.2104 LTS（x86_64）。
+
 自托管的单文件 HTML 预览发布工具。用 Web 或 macOS CLI 发布，访客持链接点击「打开预览」后占用一个公网 IP 名额。预览在独立站点和沙箱 iframe 中展示。
+
+## 从 Agent 开始
+
+将 [WispLink Skill](.agents/skills/wisplink) 安装到本地 Agent，然后告诉它「设置 WispLink」。已有控制台地址时，Skill 引导安装 CLI、验证地址并打开浏览器授权。首次部署时，Skill 通过 [阿里云 ECS 部署指南](deploy/AGENT-SETUP.md) 引导准备域名和证书，并使用同版本的部署脚本。
+
+授权后，可以告诉 Agent「把这个 HTML 文件发布成预览链接」。
 
 ## 本地运行
 
@@ -36,15 +44,14 @@ cd web && npm run dev
 在下载或克隆的 WispLink 源码目录中运行以下命令。将示例地址替换为你自己部署的控制台 HTTPS 地址，使用该实例的账号登录。首次安装时，CLI 需要你显式配置服务器地址。
 
 ```bash
-git clone https://github.com/Erikhalilx/wisplink.git
+git clone --branch v0.2.0 https://github.com/Erikhalilx/wisplink.git
 cd wisplink
 uv tool install .
-wisplink config set-server https://console.example.com
-wisplink login
+wisplink connect https://console.example.com
 wisplink publish ./report.html --ttl 24h --max-ips 10 --json
 ```
 
-`login` 通过系统浏览器授权，凭证保存在 macOS 钥匙串。使用 `wisplink config set-defaults` 设置本机默认值。CLI 默认记录本地绝对路径，可以用 `--no-path` 省略或用 `--path-note` 提供备注。自定义到期时间使用 `--expires-at` 和带时区的 ISO 8601 日期。预设时长和自定义日期二选一。
+`connect` 验证控制台并通过系统浏览器授权，凭证保存在 macOS 钥匙串。连接已确认属于自己的 v0.1.0 实例时，使用 `wisplink connect https://console.example.com --legacy`。使用 `wisplink config set-defaults` 设置本机默认值。CLI 默认记录本地绝对路径，可以用 `--no-path` 省略或用 `--path-note` 提供备注。自定义到期时间使用 `--expires-at` 和带时区的 ISO 8601 日期。预设时长和自定义日期二选一。
 
 Codex 可从仓库内的 `.agents/skills/wisplink` 发现 Skill。WorkBuddy 使用本地任务，把 [发布 Skill](.agents/skills/wisplink/SKILL.md) 所在目录作为本地 Skill 导入，并确认当前任务可读文件及调用本机终端。
 

@@ -227,25 +227,72 @@ def set_defaults(ttl: str = "24h", max_ips: int = typer.Option(10, min=1, max=10
 @app.command()
 def login():
     with profile() as config:
-        origin = configured(config)
-        backend = vault()
-        previous = credential(backend, origin)
-        exchange = browser_code(origin)
-        with httpx.Client(base_url=origin, timeout=30) as client:
-            data = token_request(client, exchange)
-            store(backend, origin, data)
-            if previous:
-                try:
-                    client.post(
-                        "/oauth/revoke",
-                        data={
-                            "client_id": CLIENT_ID,
-                            "token": previous["refresh_token"],
-                        },
-                    ).raise_for_status()
-                except httpx.HTTPError:
-                    typer.echo("请在后台检查并撤销旧的设备授权。", err=True)
+        login_to(configured(config))
     typer.echo("已授权当前设备。")
+
+
+def login_to(origin):
+    backend = vault()
+    previous = credential(backend, origin)
+    exchange = browser_code(origin)
+    with httpx.Client(base_url=origin, timeout=30) as client:
+        data = token_request(client, exchange)
+        store(backend, origin, data)
+        if previous:
+            try:
+                client.post(
+                    "/oauth/revoke",
+                    data={"client_id": CLIENT_ID, "token": previous["refresh_token"]},
+                ).raise_for_status()
+            except httpx.HTTPError:
+                typer.echo("请在后台检查并撤销旧的设备授权。", err=True)
+
+
+def check_instance(origin, allow_legacy):
+    try:
+        with httpx.Client(
+            base_url=origin, timeout=10, follow_redirects=False
+        ) as client:
+            response = client.get("/api/v1/instance")
+            if response.status_code == 404:
+                legacy = client.get("/api/v1/session")
+                if legacy.status_code == 401 and legacy.json() == {
+                    "detail": "会话已失效，请重新登录。"
+                }:
+                    if allow_legacy:
+                        return
+                    fail(
+                        "检测到可能是旧版 WispLink。请确认该地址属于你的实例，再用 --legacy 接入。"
+                    )
+            if response.status_code == 200:
+                instance = response.json()
+                if (
+                    isinstance(instance, dict)
+                    and instance.get("product") == "wisplink"
+                    and instance.get("api_version") == 1
+                    and instance.get("console_origin") == origin
+                ):
+                    return
+    except httpx.RequestError:
+        fail("无法访问该地址。请检查域名、HTTPS 证书和网络连接。")
+    except ValueError:
+        pass
+    fail("无法确认该地址是兼容的 WispLink 控制台。请检查地址或服务器状态。")
+
+
+@app.command()
+def connect(address: str, legacy: bool = typer.Option(False, "--legacy")):
+    """Check a WispLink instance, authorize this Mac, and save the connection."""
+    origin = normalize_origin(
+        address if "://" in address else f"https://{address.strip()}"
+    )
+    check_instance(origin, legacy)
+    with profile() as config:
+        login_to(origin)
+        candidate = {**config, "server": origin}
+        call(candidate, "GET", "")
+        save_config(candidate)
+    typer.echo(f"已连接 {origin}，可以发布 HTML。")
 
 
 @app.command()
