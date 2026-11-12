@@ -362,6 +362,10 @@ watch(modal, async (value) => {
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
 
         <section v-if="page === 'overview'">
+          <section v-if="admin" class="panel agent-setup">
+            <div><h2>新设备接入</h2><p>把下载的 ZIP 交给本地 Agent，按提示完成浏览器授权。</p></div>
+            <NButton tag="a" href="/api/v1/admin/agent-bundle">下载 Agent 接入包</NButton>
+          </section>
           <dl class="overview">
             <div><dt>有效链接</dt><dd>{{ overview.active }}</dd></div>
             <div><dt>发布总数</dt><dd>{{ overview.total }}</dd></div>

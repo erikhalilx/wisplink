@@ -2,11 +2,13 @@
 
 [English](README.en.md)
 
-**v0.2.0 适配范围** · 本地 Apple 芯片 Mac（macOS），服务器为阿里云 ECS + Alibaba Cloud Linux 3.2104 LTS（x86_64）。
+**0.2 系列适配范围** · 本地 Apple 芯片 Mac（macOS），服务器为阿里云 ECS + Alibaba Cloud Linux 3.2104 LTS（x86_64）。
 
 自托管的单文件 HTML 预览发布工具。用 Web 或 macOS CLI 发布，访客持链接点击「打开预览」后占用一个公网 IP 名额。预览在独立站点和沙箱 iframe 中展示。
 
 ## 从 Agent 开始
+
+超级管理员登录控制台后，在首页点「下载 Agent 接入包」。把 ZIP 交给新 Mac 上能访问本机终端的 Agent，说「用这个包接入 WispLink」。Agent 会解包并用预填的控制台地址连接，用户在浏览器完成一次授权后即可发布。包里只包含接入说明、Skill 和安装脚本。
 
 将 [WispLink Skill](.agents/skills/wisplink) 安装到本地 Agent，然后告诉它「设置 WispLink」。已有控制台地址时，Skill 引导安装 CLI、验证地址并打开浏览器授权。首次部署时，Skill 通过 [阿里云 ECS 部署指南](deploy/AGENT-SETUP.md) 引导准备域名和证书，并使用同版本的部署脚本。
 

@@ -2,11 +2,13 @@
 
 [简体中文](README.md)
 
-**v0.2.0 compatibility** · Apple silicon Mac (macOS) for the local Agent and CLI, and Alibaba Cloud ECS with Alibaba Cloud Linux 3.2104 LTS (x86_64) for the server.
+**0.2 compatibility** · Apple silicon Mac (macOS) for the local Agent and CLI, and Alibaba Cloud ECS with Alibaba Cloud Linux 3.2104 LTS (x86_64) for the server.
 
 WispLink is a self-hosted service for sharing single-file HTML previews. Publish from the web console or the macOS CLI. A visitor uses one public IP slot after clicking **Open preview**. The preview runs in a sandboxed iframe on a separate site.
 
 ## Start with an Agent
+
+Super administrators can download a preconfigured Agent setup ZIP from the console overview. Give the ZIP to an Agent with local terminal access on the new Mac and ask it to connect using the package. Complete browser authorization once to start publishing. The package contains the instance address, instructions, a skill and an installer.
 
 Install the [WispLink skill](.agents/skills/wisplink) in your local Agent and ask it to set up WispLink. For an existing instance, the skill guides CLI installation, verifies the console address, and opens browser authorization. For a first installation, the [Alibaba Cloud ECS setup guide](deploy/AGENT-SETUP.md) covers the host, domains, certificates, and versioned deployment script.
 

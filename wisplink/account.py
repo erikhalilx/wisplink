@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, select, update
 
+from .agent_bundle import build_agent_bundle
 from .db import devices, login_attempts, oauth_codes, sessions, users, write_transaction
 from .security import digest, dummy_hash, fingerprint, passwords, token, valid_password
 from .service import (
@@ -148,6 +149,18 @@ def logout(request: Request, response: Response):
         secure=state.settings.console_origin.startswith("https:"),
         httponly=True,
         samesite="strict",
+    )
+
+
+@router.get("/admin/agent-bundle", response_class=Response)
+def download_agent_bundle(request: Request):
+    state = request.app.state
+    with state.engine.connect() as connection:
+        require_admin(actor(connection, request))
+    return Response(
+        build_agent_bundle(state.settings.console_origin),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="wisplink-agent.zip"'},
     )
 
 

@@ -37,6 +37,8 @@ input[type=file]::file-selector-button { margin-right: .6rem; cursor: pointer; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
 .page-heading p { margin-top: .5rem; color: var(--muted); }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 13px; }
+.agent-setup { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; padding: 1rem 1.25rem; }
+.agent-setup p { margin: .35rem 0 0; color: var(--muted); }
 .narrow { max-width: 660px; }
 .toolbar { padding: 1rem; display: flex; gap: .6rem; align-items: center; }
 .toolbar input { max-width: 260px; }
