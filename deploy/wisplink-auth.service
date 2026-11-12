@@ -1,0 +1,21 @@
+[Unit]
+Description=WispLink OAuth authorization server
+After=network.target
+
+[Service]
+User=wisplink
+Group=wisplink
+EnvironmentFile=/etc/wisplink/wisplink.env
+WorkingDirectory=/opt/wisplink
+StateDirectory=wisplink
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/opt/wisplink/.venv/bin/gunicorn --bind 127.0.0.1:8001 --workers 1 --threads 4 wisplink.oauth:create_auth_app()
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

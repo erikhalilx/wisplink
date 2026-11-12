@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+*.sqlite*
+data/
+deploy/local/
+web/node_modules/
+web/dist/

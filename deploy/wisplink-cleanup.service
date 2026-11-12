@@ -1,0 +1,17 @@
+[Unit]
+Description=Purge expired and closed WispLink content
+
+[Service]
+Type=oneshot
+User=wisplink
+Group=wisplink
+EnvironmentFile=/etc/wisplink/wisplink.env
+WorkingDirectory=/opt/wisplink
+StateDirectory=wisplink
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/opt/wisplink/.venv/bin/python -m wisplink.manage cleanup
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
