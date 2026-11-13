@@ -4,7 +4,7 @@
 
 **0.2 compatibility** · Apple silicon Mac (macOS) for the local Agent and CLI, and Alibaba Cloud ECS with Alibaba Cloud Linux 3.2104 LTS (x86_64) for the server.
 
-WispLink is a self-hosted service for sharing single-file HTML previews. Publish from the web console or the macOS CLI. A visitor uses one public IP slot after clicking **Open preview**. The preview runs in a sandboxed iframe on a separate site.
+WispLink is a self-hosted service for sharing single-file HTML previews. Publish from the web console or the macOS CLI. Opening a link displays the HTML directly. The browser runs the preview in a sandbox on a separate site, with access limited by public IP.
 
 ## Connect to an existing WispLink instance with an Agent
 
@@ -76,7 +76,7 @@ The CLI requires an explicit server address. The `connect` command verifies the 
 ## Preview behavior
 
 - Choose 30 minutes, 1/6/24 hours, 7/14/30/90/180/365 days, permanent, or a specific date. An active link can be shortened or extended. A new preset runs from the time of the edit. Administrators can cap the total lifetime.
-- A GET or HEAD request shows the confirmation page. Clicking the button registers the public IP and returns the sandboxed page. A different public IP is checked against the same limit.
+- A GET request registers the public IP and serves the HTML directly. Visitors on a registered IP can return. Once the limit is reached, new IPs see an error page. A HEAD check uses no slot. Link preview services that send GET requests follow the same rules.
 - The service supports self-contained UTF-8 HTML, embedded charts, and inline scripts. Browser policy restricts external resources and form submissions. Publish content suitable for link sharing.
 - Disabling an account revokes web sessions and CLI authorization. Existing links follow their configured lifetime. Super administrators can manage all published links.
 - Cleanup removes expired or closed preview files and retains aggregate page views, unique visitors, and IP counts. Backups cover the database and configuration. Restoring a backup marks missing content as unavailable.

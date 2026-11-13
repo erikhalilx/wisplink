@@ -19,7 +19,7 @@
 
 6. 将四个 systemd 单元复制到 `/etc/systemd/system/`，运行 `systemctl daemon-reload`，再运行 `systemctl enable --now wisplink-api wisplink-auth wisplink-cleanup.timer`。
 7. 复制一份 `wisplink.nginx.conf` 到现有 Nginx 的 include 目录。将示例域名和 TLS 路径替换成实际值。只在 `nginx -t` 成功后运行 `systemctl reload nginx`。如果 SELinux 拒绝代理到回环端口，按现有系统策略为这些连接配置权限。
-8. 测试已有站点和 WispLink。用 Mac 登录控制台、上传样例、检查访客点击前后的计数，再配置 CLI 指向本次部署的控制台域名并授权发布。查看 `journalctl -u wisplink-api -u wisplink-auth -u wisplink-cleanup`，并根据实测带宽调整预览并发与单连接传输上限。
+8. 测试已有站点和 WispLink。用 Mac 登录控制台、上传样例、直接打开预览链接并检查 IP 计数，再配置 CLI 指向本次部署的控制台域名并授权发布。查看 `journalctl -u wisplink-api -u wisplink-auth -u wisplink-cleanup`，并根据实测带宽调整预览并发与单连接传输上限。
 
 ## 备份、恢复、更新
 

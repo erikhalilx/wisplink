@@ -1,8 +1,7 @@
-import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from conftest import CONSOLE, PASSWORD, PREVIEW
+from conftest import CONSOLE, PASSWORD
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -22,28 +21,21 @@ def publish(console, expiry='{"preset":"24h"}', max_ips=1):
     return response.json()
 
 
-def read_landing(client, link):
-    response = client.get(link)
-    assert response.status_code == 200, response.text
-    assert HTML not in response.content
-    return re.search(r'name="challenge" value="([^"]+)"', response.text)[1]
-
-
-def test_preview_click_atomic_quota_and_close(setup):
+def test_direct_preview_atomic_quota_and_close(setup):
     app, console, _ = setup
     row = publish(console, max_ips=2)
     endpoint = "/api/v1/publishes/" + row["id"]
-    with TestClient(app, client=("192.0.2.1", 1234)) as visitor:
-        proof = read_landing(visitor, row["url"])
-        assert visitor.head(row["url"]).status_code == 200
-        assert visitor.get(row["url"] + "/content").status_code == 404
-    assert console.get(endpoint).json()["ip_count"] == 0
+    with TestClient(app, client=("192.0.2.99", 1234)) as visitor:
+        head = visitor.head(row["url"])
+        assert head.status_code == 200
+        assert head.content == b""
+        assert "Set-Cookie" not in head.headers
+    summary = console.get(endpoint).json()
+    assert (summary["ip_count"], summary["pv"], summary["uv"]) == (0, 0, 0)
 
     def visit(number):
         with TestClient(app, client=(f"192.0.2.{number}", 1234)) as visitor:
-            return visitor.post(
-                row["url"], headers={"Origin": PREVIEW}, data={"challenge": proof}
-            )
+            return visitor.get(row["url"])
 
     with ThreadPoolExecutor(8) as workers:
         responses = list(workers.map(visit, range(1, 9)))
@@ -51,17 +43,28 @@ def test_preview_click_atomic_quota_and_close(setup):
         sorted(response.status_code for response in responses) == [200, 200] + [403] * 6
     )
     for response in responses:
+        assert response.headers["Cache-Control"] == "no-store"
+        csp = response.headers["Content-Security-Policy"]
+        assert "sandbox allow-scripts;" in csp
+        assert "frame-ancestors 'none'" in csp
         if response.is_success:
             assert response.content == HTML
-            assert (
-                "sandbox allow-scripts" in response.headers["Content-Security-Policy"]
-            )
-            assert response.headers["Cache-Control"] == "no-store"
+        else:
+            assert "访问 IP 名额已满" in response.text
+
     summary = console.get(endpoint).json()
     assert (summary["ip_count"], summary["pv"], summary["uv"]) == (2, 2, 2)
+    allowed_ip = next(i for i, response in enumerate(responses, 1) if response.is_success)
+    with TestClient(app, client=(f"192.0.2.{allowed_ip}", 1234)) as returning:
+        returning.cookies.update(responses[allowed_ip - 1].cookies)
+        assert returning.get(row["url"]).content == HTML
+    summary = console.get(endpoint).json()
+    assert (summary["ip_count"], summary["pv"], summary["uv"]) == (2, 3, 2)
+
     assert console.post(endpoint + "/close").json()["status"] == "closed"
-    assert visit(1).status_code == 410
-    assert console.get(row["url"]).status_code == 410
+    assert visit(allowed_ip).status_code == 410
+    assert console.head(row["url"]).status_code == 410
+    assert console.get(row["url"] + "x").status_code == 404
 
 
 def test_active_expiry_can_shorten_and_switch_from_permanent(setup):
