@@ -6,13 +6,33 @@
 
 WispLink is a self-hosted service for sharing single-file HTML previews. Publish from the web console or the macOS CLI. A visitor uses one public IP slot after clicking **Open preview**. The preview runs in a sandboxed iframe on a separate site.
 
-## Start with an Agent
+## Connect to an existing WispLink instance with an Agent
 
-Super administrators can download a preconfigured Agent setup ZIP from the console overview. Give the ZIP to an Agent with local terminal access on the new Mac and ask it to connect using the package. Complete browser authorization once to start publishing. The package contains the instance address, instructions, a skill and an installer.
+1. On an Apple silicon Mac, import the [v0.2.0 WispLink skill](https://github.com/erikhalilx/wisplink/tree/v0.2.0/.agents/skills/wisplink) (the entire `.agents/skills/wisplink` directory) into an Agent with access to the local terminal. Codex can discover it in the source checkout. In a local WorkBuddy task, import the directory. Importing the skill does not install the CLI.
+2. Replace the example URL with your console's HTTPS address and send this to the Agent:
 
-Install the [WispLink skill](.agents/skills/wisplink) in your local Agent and ask it to set up WispLink. For an existing instance, the skill guides CLI installation, verifies the console address, and opens browser authorization. For a first installation, the [Alibaba Cloud ECS setup guide](deploy/AGENT-SETUP.md) covers the host, domains, certificates, and versioned deployment script.
+   ```text
+   Connect my Mac to WispLink. My console address is https://console.example.com.
+   ```
 
-After authorization, ask the Agent to publish an HTML file as a preview.
+   The Agent reuses a working connection or a compatible CLI. If the CLI is missing, it installs it from the GitHub v0.2.0 source with `uv`. If `uv` is missing, the Agent will guide you through setting it up.
+3. Sign in to the console and grant access in your system browser. After the Agent confirms the connection, attach a single-file HTML document or provide its path on the Mac. For example:
+
+   ```text
+   Publish this HTML file as a preview link that expires in 24 hours.
+   ```
+
+   You can also give the Agent the console address, file and options in your first message. It continues the original publish after authorization and returns the preview URL, expiry and publication ID.
+
+Super administrators can also download the optional **Agent setup package** from the console overview. The ZIP includes the prefilled console address, instructions, a skill and an installer. Give the ZIP to the Agent and ask it to connect using the package.
+
+### Already installed v0.2.0?
+
+Reimport the skill from the link above. The update on GitHub does not replace copies already on your Mac. Keep using a compatible CLI, or ask the Agent to check `uv` and the active CLI path and run the same-version reinstall from the skill. Your settings and authorization are retained.
+
+## First deployment on Alibaba Cloud ECS
+
+If you do not have a WispLink instance yet, ask the Agent to follow the [Alibaba Cloud ECS setup guide](deploy/AGENT-SETUP.md) to prepare the domains and certificates and run the deployment script from the same release.
 
 ## Run locally
 
@@ -41,21 +61,17 @@ cd web && npm run dev
 
 Open the [local console](http://localhost:5173). Local preview links use `127.0.0.1:8000`. Run `uv run pytest -q` to check the web and OAuth flows.
 
-## macOS CLI and agents
+## Use the macOS CLI manually
 
-Install from the source directory. Replace the example URL with your own console's HTTPS address and sign in to that instance.
+Run these commands in the Mac terminal. Replace the example URL with your own console's HTTPS address and sign in to that instance.
 
 ```bash
-git clone --branch v0.2.0 https://github.com/Erikhalilx/wisplink.git
-cd wisplink
-uv tool install .
+uv tool install --from 'https://github.com/erikhalilx/wisplink/archive/refs/tags/v0.2.0.tar.gz' wisplink
 wisplink connect https://console.example.com
 wisplink publish ./report.html --ttl 24h --max-ips 10 --json
 ```
 
 The CLI requires an explicit server address. The `connect` command verifies the console and starts browser authorization. Credentials are stored in the macOS Keychain. To connect to a confirmed v0.1.0 instance, use `wisplink connect https://console.example.com --legacy`. Use `wisplink config set-defaults` to set local defaults. The CLI records the absolute source path by default. Use `--no-path` to omit it or `--path-note` to supply a note. Use either a preset `--ttl` or an ISO 8601 timestamp with a timezone via `--expires-at`.
-
-Codex can discover the [WispLink skill](.agents/skills/wisplink/SKILL.md) in this repository. To use it in a local WorkBuddy task, import the skill directory and give the task access to the file and local terminal.
 
 ## Preview behavior
 

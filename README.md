@@ -6,13 +6,33 @@
 
 自托管的单文件 HTML 预览发布工具。用 Web 或 macOS CLI 发布，访客持链接点击「打开预览」后占用一个公网 IP 名额。预览在独立站点和沙箱 iframe 中展示。
 
-## 从 Agent 开始
+## 通过 Agent 接入已有 WispLink
 
-超级管理员登录控制台后，在首页点「下载 Agent 接入包」。把 ZIP 交给新 Mac 上能访问本机终端的 Agent，说「用这个包接入 WispLink」。Agent 会解包并用预填的控制台地址连接，用户在浏览器完成一次授权后即可发布。包里只包含接入说明、Skill 和安装脚本。
+1. 在 Apple 芯片 Mac 上，将 [v0.2.0 的 WispLink Skill](https://github.com/erikhalilx/wisplink/tree/v0.2.0/.agents/skills/wisplink)（整个 `.agents/skills/wisplink` 目录）导入能调用本机终端的 Agent。Codex 可以在源码项目中发现该 Skill；WorkBuddy 可以在本地任务中导入目录。导入时不会安装 CLI。
+2. 把下面的示例地址换成你的控制台 HTTPS 地址，发给 Agent：
 
-将 [WispLink Skill](.agents/skills/wisplink) 安装到本地 Agent，然后告诉它「设置 WispLink」。已有控制台地址时，Skill 引导安装 CLI、验证地址并打开浏览器授权。首次部署时，Skill 通过 [阿里云 ECS 部署指南](deploy/AGENT-SETUP.md) 引导准备域名和证书，并使用同版本的部署脚本。
+   ```text
+   帮我连接 WispLink。我的控制台地址是 https://console.example.com。
+   ```
 
-授权后，可以告诉 Agent「把这个 HTML 文件发布成预览链接」。
+   Agent 会复用可用的连接或 CLI，需要安装时会通过 `uv` 从 GitHub 的 v0.2.0 源码安装。如果没有 `uv`，Agent 会引导你准备它。
+3. 在系统浏览器中登录控制台并同意授权。等 Agent 确认连接成功，再附上单文件 HTML 或提供它在 Mac 上的路径，例如：
+
+   ```text
+   把这个 HTML 文件发布成预览链接，有效期 24 小时。
+   ```
+
+   也可以在第一条消息里同时提供控制台地址、HTML 和发布参数。授权成功后，Agent 会接着发布并返回预览 URL、有效期和发布 ID。
+
+超级管理员也可在控制台首页下载可选的「Agent 接入包」。ZIP 包含预填的控制台地址、说明、Skill 和安装脚本。把 ZIP 交给 Agent，说「用这个包接入 WispLink」。
+
+### 已经安装过 v0.2.0
+
+从上方链接重新导入 Skill。GitHub 上的更新不会替换 Mac 上已有的副本。兼容的 CLI 可以继续使用；如果希望获取同版本的更新源码，请让 Agent 检查 `uv` 和实际使用的 CLI 路径，再按 Skill 里的命令重装，保留现有配置和授权。
+
+## 首次部署到阿里云 ECS
+
+如果还没有 WispLink 实例，可让 Agent 按照 [阿里云 ECS 部署指南](deploy/AGENT-SETUP.md) 准备域名与证书，并使用同版本的部署脚本。
 
 ## 本地运行
 
@@ -41,21 +61,17 @@ cd web && npm run dev
 
 打开 [本地控制台](http://localhost:5173)。预览内容使用 `127.0.0.1:8000`，链接供本机验收。运行 `uv run pytest -q` 可复核 Web 和 OAuth 行为。
 
-## macOS CLI 与 Agent
+## 手动使用 macOS CLI
 
-在下载或克隆的 WispLink 源码目录中运行以下命令。将示例地址替换为你自己部署的控制台 HTTPS 地址，使用该实例的账号登录。首次安装时，CLI 需要你显式配置服务器地址。
+如果想手动操作，在 Mac 终端运行以下命令。将示例地址替换为你自己部署的控制台 HTTPS 地址，使用该实例的账号登录。首次安装时，CLI 需要你显式配置服务器地址。
 
 ```bash
-git clone --branch v0.2.0 https://github.com/Erikhalilx/wisplink.git
-cd wisplink
-uv tool install .
+uv tool install --from 'https://github.com/erikhalilx/wisplink/archive/refs/tags/v0.2.0.tar.gz' wisplink
 wisplink connect https://console.example.com
 wisplink publish ./report.html --ttl 24h --max-ips 10 --json
 ```
 
 `connect` 验证控制台并通过系统浏览器授权，凭证保存在 macOS 钥匙串。连接已确认属于自己的 v0.1.0 实例时，使用 `wisplink connect https://console.example.com --legacy`。使用 `wisplink config set-defaults` 设置本机默认值。CLI 默认记录本地绝对路径，可以用 `--no-path` 省略或用 `--path-note` 提供备注。自定义到期时间使用 `--expires-at` 和带时区的 ISO 8601 日期。预设时长和自定义日期二选一。
-
-Codex 可从仓库内的 `.agents/skills/wisplink` 发现 Skill。WorkBuddy 使用本地任务，把 [发布 Skill](.agents/skills/wisplink/SKILL.md) 所在目录作为本地 Skill 导入，并确认当前任务可读文件及调用本机终端。
 
 ## 发布规则
 
