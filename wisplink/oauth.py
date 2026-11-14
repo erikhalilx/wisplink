@@ -250,8 +250,10 @@ CONSENT = """
 <!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>授权 WispLink CLI</title>
-<style>body{font:16px system-ui;background:#eef5f1;color:#17392e;margin:0;display:grid;place-items:center;min-height:100vh}main{background:white;border:1px solid #d0e1d9;border-radius:14px;padding:2rem;max-width:32rem;margin:1rem}button{font:inherit;padding:.5rem .8rem;margin-right:.5rem;cursor:pointer}</style>
-<main><h1>授权 WispLink CLI</h1><p>当前账号 {{ username }}</p>
+<link rel="icon" type="image/png" sizes="32x32" href="/wisplink-icon-32x32.png">
+<style>body{font:16px system-ui;background:#eef5f1;color:#17392e;margin:0;display:grid;place-items:center;min-height:100vh}main{background:white;border:1px solid #d0e1d9;border-radius:14px;padding:2rem;max-width:32rem;margin:1rem}.brand{display:flex;align-items:center;gap:.55rem;font-weight:700}button{font:inherit;padding:.5rem .8rem;margin-right:.5rem;cursor:pointer}</style>
+<main><div class="brand"><img src="/wisplink-icon-64x64.png" width="32" height="32" alt="">WispLink</div>
+<h1>授权 WispLink CLI</h1><p>当前账号 {{ username }}</p>
 <ul>{% if can_read %}<li>查看你的发布记录</li>{% endif %}{% if can_write %}<li>创建和管理你的预览链接</li>{% endif %}</ul>
 <form method="post"><input type="hidden" name="proof" value="{{ proof }}">
 <button name="decision" value="allow">授权</button><button name="decision" value="deny">拒绝</button></form>
@@ -295,7 +297,7 @@ def create_auth_app(settings=None):
         response.headers["Referrer-Policy"] = "strict-origin"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; "
+            "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; "
             "form-action 'self' http://127.0.0.1:*; base-uri 'none'"
         )
         return response

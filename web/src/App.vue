@@ -315,7 +315,7 @@ watch(modal, async (value) => {
     <div v-if="!ready" class="loading">正在加载…</div>
     <main v-else-if="!user" class="login">
       <form class="login-panel" @submit.prevent="login">
-        <div class="brand"><span class="mark" aria-hidden="true">W</span> WispLink</div>
+        <div class="brand"><img class="mark" src="/wisplink-icon-64x64.png" width="34" height="34" alt=""> WispLink</div>
         <h1>登录控制台</h1>
         <label>用户名<input v-model="username" name="username" autocomplete="username" required></label>
         <label>密码<input v-model="password" name="password" type="password" autocomplete="current-password" required></label>
@@ -325,7 +325,7 @@ watch(modal, async (value) => {
     </main>
     <div v-else class="layout">
       <aside class="sidebar">
-        <div class="brand"><span class="mark" aria-hidden="true">W</span> WispLink</div>
+        <div class="brand"><img class="mark" src="/wisplink-icon-64x64.png" width="34" height="34" alt=""> WispLink</div>
         <nav aria-label="控制台">
           <button :aria-current="page === 'overview' ? 'page' : undefined" @click="navigate('overview')">首页概览</button>
           <button :aria-current="page === 'records' ? 'page' : undefined" @click="navigate('records')">发布记录</button>

@@ -1,8 +1,12 @@
 import re
+from base64 import b64encode
 from contextlib import closing
+from functools import cache
+from html import escape
+from pathlib import Path
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy import insert, select, update
 
 from .db import ip_grants, publishes, visitors, write_transaction
@@ -10,12 +14,14 @@ from .security import digest, fingerprint, token
 from .service import now_seconds, peer_ip, publication_status
 
 router = APIRouter()
+BRAND_DIR = Path(__file__).with_name("brand")
 TOKEN_FORMAT = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 STYLE = """
 :root{font:16px system-ui;color:#142f2a;background:#f0f6f3}
 body{margin:0;min-height:100vh;display:grid;place-items:center}
 main{max-width:34rem;padding:2rem;margin:1rem;background:white;border:1px solid #d0e1d9;border-radius:16px}
-h1{margin:0;font-size:1.5rem;overflow-wrap:anywhere}p{color:#48625a}
+h1{margin:0;font-size:1.5rem;overflow-wrap:anywhere}
+.brand{display:flex;align-items:center;gap:.55rem;margin-bottom:.9rem;font-weight:700}
 """
 CONTENT_CSP = (
     "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
@@ -25,12 +31,31 @@ CONTENT_CSP = (
 )
 
 
+def preview_csp(origin):
+    return CONTENT_CSP.replace("img-src data:;", f"img-src data: {origin}/favicon.ico;")
+
+
+@cache
+def brand_icon_url():
+    icon = BRAND_DIR / "wisplink-icon-64x64.png"
+    return "data:image/png;base64," + b64encode(icon.read_bytes()).decode("ascii")
+
+
+@router.api_route("/favicon.ico", methods=["GET", "HEAD"])
+def preview_favicon():
+    return FileResponse(BRAND_DIR / "favicon.ico", media_type="image/x-icon")
+
+
 def error_page(message, status):
+    message = escape(message)
+    icon = brand_icon_url()
     return HTMLResponse(
         '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{message}</title><style>{STYLE}</style>"
-        f"<main><h1>{message}</h1></main>",
+        f'<title>{message} · WispLink</title><link rel="icon" href="{icon}">'
+        f"<style>{STYLE}</style>"
+        f'<main><div class="brand"><img src="{icon}" width="32" height="32" alt="">'
+        f"WispLink</div><h1>{message}</h1></main>",
         status,
         headers={"Content-Security-Policy": CONTENT_CSP},
     )
@@ -68,7 +93,7 @@ def preview_metadata(secret: str, request: Request):
     return Response(
         status_code=error.status_code if error else 200,
         media_type="text/html",
-        headers={"Content-Security-Policy": CONTENT_CSP},
+        headers={"Content-Security-Policy": preview_csp(state.settings.preview_origin)},
     )
 
 
@@ -140,7 +165,7 @@ def open_preview(secret: str, request: Request):
     response = StreamingResponse(
         stream(file),
         media_type="text/html",
-        headers={"Content-Security-Policy": CONTENT_CSP},
+        headers={"Content-Security-Policy": preview_csp(settings.preview_origin)},
     )
     response.set_cookie(
         state.visitor_cookie,

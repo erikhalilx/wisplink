@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urljoin
 
 from conftest import CONSOLE, PASSWORD
 from fastapi.testclient import TestClient
@@ -30,6 +31,12 @@ def test_direct_preview_atomic_quota_and_close(setup):
         assert head.status_code == 200
         assert head.content == b""
         assert "Set-Cookie" not in head.headers
+        icon_url = urljoin(row["url"], "/favicon.ico")
+        icon = visitor.get(icon_url)
+        assert icon.status_code == 200
+        assert icon.content.startswith(b"\x00\x00\x01\x00")
+        assert "Set-Cookie" not in icon.headers
+        assert visitor.get(CONSOLE + "/favicon.ico").status_code == 404
     summary = console.get(endpoint).json()
     assert (summary["ip_count"], summary["pv"], summary["uv"]) == (0, 0, 0)
 
@@ -51,6 +58,7 @@ def test_direct_preview_atomic_quota_and_close(setup):
             assert response.content == HTML
         else:
             assert "访问 IP 名额已满" in response.text
+            assert "WispLink" in response.text
 
     summary = console.get(endpoint).json()
     assert (summary["ip_count"], summary["pv"], summary["uv"]) == (2, 2, 2)

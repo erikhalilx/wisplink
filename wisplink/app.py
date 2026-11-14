@@ -35,7 +35,9 @@ def create_app(settings: Settings | None = None):
         host = request.headers.get("host")
         path = request.url.path
         console_request = host == console_host and path.startswith("/api/v1/")
-        preview_request = host == preview_host and path.startswith("/p/")
+        preview_request = host == preview_host and (
+            path.startswith("/p/") or path == "/favicon.ico"
+        )
         if not (console_request or preview_request):
             response = JSONResponse({"detail": "找不到页面。"}, status_code=404)
         elif (

@@ -27,7 +27,7 @@ input[type=file]::file-selector-button { margin-right: .6rem; cursor: pointer; }
 .layout { min-height: 100dvh; display: grid; grid-template-columns: 210px minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; height: 100dvh; background: #e9f1ed; border-right: 1px solid var(--line); padding: 30px 18px 18px; display: flex; flex-direction: column; gap: 40px; }
 .brand { display: flex; align-items: center; gap: 11px; color: #103c31; font-weight: 750; font-size: 21px; letter-spacing: -.045em; white-space: nowrap; }
-.mark { display: inline-grid; place-items: center; width: 34px; height: 34px; background: #11644e; color: white; border-radius: 9px; font-size: 19px; }
+.mark { display: block; flex: none; object-fit: contain; }
 .sidebar nav { display: grid; gap: 5px; }
 .sidebar button, .actions button { border: 0; background: transparent; color: inherit; padding: .55rem .7rem; border-radius: 7px; text-align: left; }
 .sidebar button:hover, .sidebar button[aria-current] { background: #d3e5dc; color: #0f4b3c; }
