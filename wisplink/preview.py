@@ -19,9 +19,9 @@ TOKEN_FORMAT = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 STYLE = """
 :root{font:16px system-ui;color:#142f2a;background:#f0f6f3}
 body{margin:0;min-height:100vh;display:grid;place-items:center}
-main{max-width:34rem;padding:2rem;margin:1rem;background:white;border:1px solid #d0e1d9;border-radius:16px}
+main{width:min(26rem,calc(100% - 3rem));box-sizing:border-box;padding:2rem;background:white;border:1px solid #dbe8e0;border-radius:20px;box-shadow:0 16px 55px #10382b12}
 h1{margin:0;font-size:1.5rem;overflow-wrap:anywhere}
-.brand{display:flex;align-items:center;gap:.55rem;margin-bottom:.9rem;font-weight:700}
+.brand{display:flex;align-items:center;gap:.55rem;margin-bottom:1.25rem;font-weight:700;color:#1c5744}
 """
 CONTENT_CSP = (
     "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
@@ -64,10 +64,10 @@ def error_page(message, status):
 def unavailable(row, state):
     if row is None:
         return error_page("链接无效。", 404)
-    if (
-        publication_status(row, now_seconds(), state.settings.uploads / row["id"])
-        != "active"
-    ):
+    status = publication_status(row, now_seconds(), state.settings.uploads / row["id"])
+    if status == "paused":
+        return error_page("此预览已暂停。", 404)
+    if status != "active":
         return error_page("链接已失效。", 410)
     return None
 

@@ -36,3 +36,7 @@ def valid_password(encoded: str, password: str) -> bool:
         return passwords.verify(encoded, password)
     except VerificationError:
         return False
+
+
+def device_label(value: str | None) -> str | None:
+    return "".join(char for char in (value or "")[:120] if char.isprintable()).strip() or None

@@ -74,7 +74,10 @@ def test_pkce_rotation_reuse_and_revoke(setup):
             "redirect_uri": callback,
         }
         assert post("/oauth/token", **request, code_verifier=token()).status_code == 400
-        response = post("/oauth/token", **request, code_verifier=verifier)
+        response = post(
+            "/oauth/token", **request, code_verifier=verifier,
+            device_name="Office Mac", device_model="Mac mini · Mac16,10", agent_name="Codex",
+        )
         assert response.status_code == 200, response.text
         old = response.json
         assert (
@@ -88,6 +91,22 @@ def test_pkce_rotation_reuse_and_revoke(setup):
                 )
 
             assert list_with(old["access_token"]).status_code == 200
+            device = console.get("/api/v1/authorizations").json()[0]
+            assert (device["device_name"], device["device_model"], device["agent_name"]) == (
+                "Office Mac", "Mac mini · Mac16,10", "Codex"
+            )
+            published = cli.post(
+                "/api/v1/publishes",
+                headers={"Authorization": "Bearer " + old["access_token"]},
+                files={"file": ("test.html", b"<!doctype html><h1>Test</h1>", "text/html")},
+                data={"expiry": '{"preset":"24h"}', "agent_name": "WorkBuddy"},
+            )
+            assert published.status_code == 201, published.text
+            matches = console.get("/api/v1/publishes", params={
+                "agent_name": "WorkBuddy", "device_name": "Office", "source": "cli"
+            }).json()
+            assert matches["total"] == 1
+            assert matches["items"][0]["id"] == published.json()["id"]
             response = post(
                 "/oauth/token",
                 grant_type="refresh_token",

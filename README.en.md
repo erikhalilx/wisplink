@@ -76,6 +76,7 @@ The CLI requires an explicit server address. The `connect` command verifies the 
 ## Preview behavior
 
 - Choose 30 minutes, 1/6/24 hours, 7/14/30/90/180/365 days, permanent, or a specific date. An active link can be shortened or extended. A new preset runs from the time of the edit. Administrators can cap the total lifetime.
+- Device authorizations can show the Mac name, model, last use and Agent client when available. Filter publications by source, Agent or device, and manage them in batches. Pausing keeps the HTML and link. Resuming requires a new expiry and IP limit, and keeps existing IP registrations.
 - A GET request registers the public IP and serves the HTML directly. Visitors on a registered IP can return. Once the limit is reached, new IPs see an error page. A HEAD check uses no slot. Link preview services that send GET requests follow the same rules.
 - The service supports self-contained UTF-8 HTML, embedded charts, and inline scripts. Browser policy restricts external resources and form submissions. Publish content suitable for link sharing.
 - Disabling an account revokes web sessions and CLI authorization. Existing links follow their configured lifetime. Super administrators can manage all published links.

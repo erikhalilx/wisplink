@@ -51,7 +51,10 @@ def actor(connection, request: Request):
         now = now_seconds()
         credential = (
             connection.execute(
-                select(users, oauth_tokens.c.scope)
+                select(
+                    users, oauth_tokens.c.scope, devices.c.id.label("device_id"),
+                    devices.c.device_name,
+                )
                 .join(devices, devices.c.user_id == users.c.id)
                 .join(oauth_tokens, oauth_tokens.c.device_id == devices.c.id)
                 .where(
@@ -103,6 +106,8 @@ def owned(connection, publish_id, user):
 def publication_status(row, now, path: Path | None = None):
     if row["closed_at"] is not None:
         return "closed"
+    if row.get("paused_at") is not None:
+        return "missing" if row["missing"] or (path is not None and not path.is_file()) else "paused"
     if row["expires_at"] is not None and row["expires_at"] <= now:
         return "expired"
     if row["missing"] or (path is not None and not path.is_file()):

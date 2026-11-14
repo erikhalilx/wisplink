@@ -15,7 +15,8 @@ const presets = [
       <label><input v-model="model.mode" type="radio" value="preset"> 预设时长</label>
       <label><input v-model="model.mode" type="radio" value="date"> 指定日期和时间</label>
     </div>
-    <select v-if="model.mode === 'preset'" v-model="model.preset" aria-label="有效期">
+    <select v-if="model.mode === 'preset'" v-model="model.preset" aria-label="有效期" required>
+      <option value="" disabled>请选择有效期</option>
       <option v-for="[value, label] in presets" :key="value" :value="value" :disabled="value === 'forever' && capped">{{ label }}</option>
     </select>
     <input v-else v-model="model.date" type="datetime-local" aria-label="本地到期时间" required>

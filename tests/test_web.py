@@ -6,7 +6,7 @@ from conftest import CONSOLE, PASSWORD
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from wisplink.db import publishes
+from wisplink.db import publishes, write_transaction
 from wisplink.manage import backup, cleanup
 
 HTML = b"<!doctype html><h1>Preview fixture</h1><script>document.body.dataset.ready = 'yes'</script>"
@@ -160,3 +160,37 @@ def test_backup_includes_wal_without_html(setup, tmp_path):
         assert connection.execute("SELECT id FROM publishes").fetchone() == (row["id"],)
     assert HTML not in snapshot.read_bytes()
     assert snapshot.stat().st_mode & 0o777 == 0o600
+
+
+def test_paused_publication_survives_cleanup_and_resumes_with_new_limits(setup):
+    _, console, settings = setup
+    row = publish(console)
+    endpoint = "/api/v1/publishes/" + row["id"]
+    assert console.get(row["url"]).content == HTML
+    assert console.post(endpoint + "/pause").json()["status"] == "paused"
+    assert "此预览已暂停" in console.get(row["url"]).text
+    with write_transaction(console.app.state.engine) as connection:
+        connection.execute(
+            publishes.update().where(publishes.c.id == row["id"]).values(expires_at=1)
+        )
+    cleanup(settings)
+    assert (settings.uploads / row["id"]).read_bytes() == HTML
+    resumed = console.post(endpoint + "/resume", json={"expiry": {"preset": "1h"}, "max_ips": 3})
+    assert resumed.status_code == 200
+    assert (resumed.json()["status"], resumed.json()["ip_count"], resumed.json()["max_ips"]) == ("active", 1, 3)
+    assert console.get(row["url"]).content == HTML
+
+
+def test_batch_is_atomic_and_records_are_paginated(setup):
+    _, console, _ = setup
+    first = publish(console)
+    second = publish(console)
+    endpoint = "/api/v1/publishes"
+    batch = endpoint + "/batch"
+    assert console.post(batch, json={"ids": [first["id"], "unknown"], "action": "pause"}).status_code == 404
+    assert console.get(f"{endpoint}/{first['id']}").json()["status"] == "active"
+    assert console.post(batch, json={"ids": [first["id"], second["id"]], "action": "pause"}).json()["updated"] == 2
+    page = console.get(endpoint, params={"status": "paused", "source": "web", "limit": 1}).json()
+    assert (page["total"], page["has_more"], len(page["items"])) == (2, True, 1)
+    following = console.get(endpoint, params={"status": "paused", "source": "web", "limit": 1, "offset": 1}).json()
+    assert following["items"][0]["id"] != page["items"][0]["id"]

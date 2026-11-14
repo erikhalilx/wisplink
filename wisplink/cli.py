@@ -3,6 +3,8 @@ import fcntl
 import hashlib
 import json
 import os
+import platform
+import subprocess
 import time
 import webbrowser
 from contextlib import contextmanager
@@ -231,12 +233,46 @@ def login():
     typer.echo("已授权当前设备。")
 
 
+def device_metadata(include_model=False):
+    def read(*command):
+        try:
+            return subprocess.check_output(
+                command, text=True, timeout=3, stderr=subprocess.DEVNULL
+            ).strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    if platform.system() != "Darwin":
+        return {}
+    name = read("/usr/sbin/scutil", "--get", "ComputerName")
+    model = ""
+    if include_model:
+        model = read("/usr/sbin/sysctl", "-n", "hw.model")
+        hardware = read("/usr/sbin/system_profiler", "SPHardwareDataType", "-json")
+        if hardware:
+            try:
+                profile = json.loads(hardware)["SPHardwareDataType"][0]
+                model = " · ".join(filter(None, (profile.get("machine_name"), model)))
+            except (ValueError, KeyError, IndexError, TypeError):
+                pass
+    return {
+        key: value[:120]
+        for key, value in (("device_name", name), ("device_model", model))
+        if value
+    }
+
+
+def agent_metadata(name=None):
+    name = (name or os.getenv("WISPLINK_AGENT", "")).strip()[:120]
+    return {"agent_name": name} if name else {}
+
+
 def login_to(origin):
     backend = vault()
     previous = credential(backend, origin)
     exchange = browser_code(origin)
     with httpx.Client(base_url=origin, timeout=30) as client:
-        data = token_request(client, exchange)
+        data = token_request(client, {**exchange, **device_metadata(include_model=True), **agent_metadata()})
         store(backend, origin, data)
         if previous:
             try:
@@ -388,6 +424,7 @@ def publish(
     expires_at: str | None = None,
     max_ips: int | None = typer.Option(None, min=1, max=10000),
     path_note: str | None = None,
+    agent: str | None = typer.Option(None, "--agent"),
     no_path: bool = typer.Option(False, "--no-path"),
     as_json: bool = typer.Option(False, "--json"),
 ):
@@ -404,6 +441,8 @@ def publish(
         data = {
             "expiry": json.dumps(expiry),
             "max_ips": max_ips or config.get("max_ips", 10),
+            **device_metadata(),
+            **agent_metadata(agent),
         }
         if not no_path:
             data["path_note"] = path_note or str(path.absolute())

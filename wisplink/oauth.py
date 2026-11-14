@@ -14,7 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Settings
 from .db import database, devices, oauth_codes, oauth_tokens, users, write_transaction
-from .security import digest
+from .security import device_label, digest
 from .service import logged, now_seconds, session_user
 
 CLIENT_ID = "wisplink-cli"
@@ -231,6 +231,10 @@ def save_token(token, request):
                 last_used_at=now,
                 expires_at=now + IDLE_SECONDS,
                 revoked=False,
+                **{
+                    key: device_label(g.device_fields.get(key))
+                    for key in ("device_name", "device_model", "agent_name")
+                },
             )
         )
         logged(g.connection, user_id, "oauth.authorize", device_id, now)
@@ -251,7 +255,7 @@ CONSENT = """
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>授权 WispLink CLI</title>
 <link rel="icon" type="image/png" sizes="32x32" href="/wisplink-icon-32x32.png">
-<style>body{font:16px system-ui;background:#eef5f1;color:#17392e;margin:0;display:grid;place-items:center;min-height:100vh}main{background:white;border:1px solid #d0e1d9;border-radius:14px;padding:2rem;max-width:32rem;margin:1rem}.brand{display:flex;align-items:center;gap:.55rem;font-weight:700}button{font:inherit;padding:.5rem .8rem;margin-right:.5rem;cursor:pointer}</style>
+<style>body{font:16px system-ui;background:#eef5f1;color:#17392e;margin:0;display:grid;place-items:center;min-height:100vh}main{background:white;border:1px solid #d0e1d9;border-radius:20px;box-shadow:0 16px 55px #10382b12;padding:2rem;max-width:32rem;margin:1rem}.brand{display:flex;align-items:center;gap:.55rem;font-weight:700}button{font:inherit;font-weight:650;border:1px solid #b9d2c4;border-radius:9px;padding:.55rem 1rem;margin-right:.5rem;background:white;color:#17392e;cursor:pointer}button[value=allow]{background:#08654e;color:white;border-color:#08654e}button:focus-visible{outline:2px solid #08745a;outline-offset:3px}</style>
 <main><div class="brand"><img src="/wisplink-icon-64x64.png" width="32" height="32" alt="">WispLink</div>
 <h1>授权 WispLink CLI</h1><p>当前账号 {{ username }}</p>
 <ul>{% if can_read %}<li>查看你的发布记录</li>{% endif %}{% if can_write %}<li>创建和管理你的预览链接</li>{% endif %}</ul>
@@ -379,6 +383,7 @@ def create_auth_app(settings=None):
             abort(400)
         with write_transaction(engine) as connection:
             g.connection = connection
+            g.device_fields = request.form
             return server.create_token_response()
 
     @app.post("/oauth/revoke")

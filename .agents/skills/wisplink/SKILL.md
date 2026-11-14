@@ -5,7 +5,7 @@ description: Connect an Apple silicon Mac to an existing WispLink console, publi
 
 # Connect, deploy, or publish with WispLink
 
-Run WispLink commands in the host Mac's local terminal. Importing this Skill only makes the instructions available; check the CLI and connection when the user asks to connect, set up WispLink, or publish. Keep the original file and publish options through installation and browser authorization.
+Run WispLink commands in the host Mac's local terminal. Importing this Skill only makes the instructions available; check the CLI and connection when the user asks to connect, set up WispLink, or publish. Keep the original file and publish options through installation and browser authorization. If you know your Agent client name (for example, Codex or WorkBuddy), set `WISPLINK_AGENT` to that name when running `connect`, `login`, and `publish`. Omit it when unknown.
 
 ## Connect to an existing instance
 

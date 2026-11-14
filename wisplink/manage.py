@@ -59,7 +59,7 @@ def cleanup(settings):
                     .where(publishes.c.id == publish_id)
                     .values(missing=True)
                 )
-            if status != "active":
+            if status not in ("active", "paused"):
                 path.unlink(missing_ok=True)
                 connection.execute(
                     delete(ip_grants).where(ip_grants.c.publish_id == publish_id)

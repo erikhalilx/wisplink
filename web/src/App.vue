@@ -7,7 +7,7 @@ const theme = { common: { primaryColor: '#08745a', primaryColorHover: '#09654f',
 const user = ref(null)
 const ready = ref(false)
 const page = ref('overview')
-const overview = ref({ total: 0, active: 0, pv: 0, uv: 0, recent_expired: [] })
+const overview = ref({ total: 0, active: 0, paused: 0, pv: 0, recent: [] })
 const statusFilter = ref('')
 const clock = ref(Date.now())
 const changedPassword = ref({ current: '', replacement: '' })
@@ -21,7 +21,20 @@ const accounts = ref([])
 const devices = ref([])
 const settings = ref({ max_days: null })
 const offset = ref(0)
-const more = ref(false)
+const pageSize = ref(20)
+const total = ref(0)
+const selected = ref([])
+const filters = ref({ agent_name: '', device_name: '', owner: '', source: '', sort: 'newest' })
+const resumeIps = ref(null)
+const displayedPage = computed(() => Math.floor(offset.value / pageSize.value) + 1)
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const allSelected = computed(() => records.value.length > 0 && selected.value.length === records.value.length)
+const selectedRows = computed(() => records.value.filter(row => selected.value.includes(row.id)))
+const canBatchPause = computed(() => selectedRows.value.every(row => row.status === 'active'))
+const canBatchResume = computed(() => selectedRows.value.every(row => row.status === 'paused'))
+const canBatchClose = computed(() => selectedRows.value.every(row => ['active', 'paused'].includes(row.status)))
+const canBatchDelete = computed(() => selectedRows.value.every(row => !['active', 'paused'].includes(row.status)))
+const operationLabels = { pause: '暂停发布', resume: '恢复发布', close: '永久关闭', delete: '删除记录' }
 const search = ref('')
 const error = ref('')
 const busy = ref(false)
@@ -40,8 +53,7 @@ const editor = ref({ mode: 'preset', preset: '24h', date: '' })
 const expiry = ref({ mode: 'preset', preset: '24h', date: '' })
 const account = ref({ username: '', password: '', admin: false, disabled: false })
 const admin = computed(() => user.value?.role === 'admin')
-const activeOnPage = computed(() => records.value.filter((row) => row.status === 'active').length)
-const statusLabels = { active: '有效', expired: '已过期', closed: '已关闭', missing: '内容不可用' }
+const statusLabels = { active: '有效', paused: '已暂停', expired: '已过期', closed: '已关闭', missing: '内容不可用' }
 
 async function api(path, options = {}) {
   const request = { ...options }
@@ -70,11 +82,25 @@ async function perform(action) {
 }
 
 async function refresh() {
-  const parameters = new URLSearchParams({ limit: '20', offset: String(offset.value), search: search.value })
+  const parameters = new URLSearchParams({ limit: String(pageSize.value), offset: String(offset.value), search: search.value })
   if (statusFilter.value) parameters.set('status', statusFilter.value)
+  for (const [key, value] of Object.entries(filters.value)) if (value && (key !== 'owner' || admin.value)) parameters.set(key, value)
   const data = await api('/publishes?' + parameters)
+  total.value = data.total
+  if (offset.value && offset.value >= data.total) {
+    offset.value = Math.max(0, Math.ceil(data.total / pageSize.value) - 1) * pageSize.value
+    return refresh()
+  }
   records.value = data.items
-  more.value = data.has_more
+  selected.value = []
+}
+
+function openRecords(status = '') {
+  search.value = ''
+  statusFilter.value = status
+  filters.value = { agent_name: '', device_name: '', owner: '', source: '', sort: 'newest' }
+  offset.value = 0
+  return navigate('records')
 }
 
 async function loadPage(name) {
@@ -163,7 +189,7 @@ function formatDate(value) {
 
 function changePage(delta) {
   return perform(async () => {
-    offset.value = Math.max(0, offset.value + delta * 20)
+    offset.value = Math.max(0, offset.value + delta * pageSize.value)
     await refresh()
   })
 }
@@ -178,9 +204,10 @@ function findRecords() {
 function createPublish(event) {
   const form = event.target
   return perform(async () => {
-    if (!file.value) throw new Error('请选择 HTML 文件。')
+    const selectedFile = form.querySelector('input[type=file]').files[0]
+    if (!selectedFile) throw new Error('请选择 HTML 文件。')
     const body = new FormData()
-    body.set('file', file.value)
+    body.set('file', selectedFile)
     body.set('expiry', JSON.stringify(expiryBody(expiry.value)))
     body.set('max_ips', String(maxIps.value))
     if (pathNote.value) body.set('path_note', pathNote.value)
@@ -233,16 +260,43 @@ function showExpiry(row) {
   return perform(async () => { settings.value = await api('/settings') })
 }
 
+function showOperation(kind, row = null) {
+  error.value = ''
+  if (kind === 'resume') {
+    editor.value = { mode: 'preset', preset: '', date: '' }
+    resumeIps.value = null
+    return perform(async () => {
+      settings.value = await api('/settings')
+      modal.value = { kind, row }
+    })
+  }
+  modal.value = { kind, row }
+}
+
 function updateRecord() {
   return perform(async () => {
     const { row, kind } = modal.value
-    const endpoint = '/publishes/' + row.id
-    if (kind === 'expiry') await api(endpoint + '/expiry', { method: 'PUT', body: expiryBody(editor.value) })
-    if (kind === 'close') await api(endpoint + '/close', { method: 'POST' })
-    if (kind === 'delete') await api(endpoint, { method: 'DELETE' })
+    const endpoint = row ? '/publishes/' + row.id : null
+    if (kind === 'expiry') {
+      await api(endpoint + '/expiry', { method: 'PUT', body: expiryBody(editor.value) })
+    } else {
+      let options
+      if (kind === 'resume') {
+        if (editor.value.mode === 'preset' && !editor.value.preset) throw new Error('请选择恢复后的有效期。')
+        options = { expiry: expiryBody(editor.value), max_ips: resumeIps.value }
+      }
+      if (!row) {
+        await api('/publishes/batch', { method: 'POST', body: { ids: selected.value, action: kind, resume: options } })
+      } else if (kind === 'delete') {
+        await api(endpoint, { method: 'DELETE' })
+      } else {
+        await api(endpoint + '/' + kind, { method: 'POST', body: options })
+      }
+    }
+    const count = row ? 1 : selected.value.length
     modal.value = null
     await refresh()
-    notice.value = kind === 'expiry' ? '到期时间已更新。' : kind === 'close' ? '链接已关闭。' : '记录已删除。'
+    notice.value = kind === 'expiry' ? '到期时间已更新。' : '已处理 ' + count + ' 条记录：' + operationLabels[kind] + '。'
   })
 }
 
@@ -328,8 +382,8 @@ watch(modal, async (value) => {
         <div class="brand"><img class="mark" src="/wisplink-icon-64x64.png" width="34" height="34" alt=""> WispLink</div>
         <nav aria-label="控制台">
           <button :aria-current="page === 'overview' ? 'page' : undefined" @click="navigate('overview')">首页概览</button>
-          <button :aria-current="page === 'records' ? 'page' : undefined" @click="navigate('records')">发布记录</button>
           <button :aria-current="page === 'new' ? 'page' : undefined" @click="navigate('new')">新建发布</button>
+          <button :aria-current="page === 'records' ? 'page' : undefined" @click="navigate('records')">发布记录</button>
           <button v-if="admin" :aria-current="page === 'accounts' ? 'page' : undefined" @click="navigate('accounts')">账号管理</button>
           <button :aria-current="page === 'devices' ? 'page' : undefined" @click="navigate('devices')">授权设备</button>
           <button v-if="admin" :aria-current="page === 'settings' ? 'page' : undefined" @click="navigate('settings')">系统设置</button>
@@ -343,11 +397,11 @@ watch(modal, async (value) => {
 
       <main class="workspace">
         <header v-if="page === 'overview'" class="page-heading">
-          <h1>首页概览</h1><NButton type="primary" @click="navigate('new')">新建发布</NButton>
+          <div><h1>发布工作台</h1><p>查看链接状态，继续管理最近的发布。</p></div>
+          <NButton type="primary" @click="navigate('new')">＋ 新建发布</NButton>
         </header>
         <header v-else-if="page === 'records'" class="page-heading">
           <div><h1>发布记录</h1><p>查看链接状态、到期时间和访问数据。</p></div>
-          <NButton type="primary" @click="navigate('new')">新建发布</NButton>
         </header>
         <header v-else-if="page === 'new'" class="page-heading">
           <div><h1>新建发布</h1><p>上传单文件 HTML，生成可分享的预览链接。</p></div>
@@ -355,63 +409,84 @@ watch(modal, async (value) => {
         <header v-else-if="page === 'accounts'" class="page-heading">
           <h1>账号管理</h1><NButton type="primary" @click="openAccount()">新建账号</NButton>
         </header>
-        <header v-else-if="page === 'devices'" class="page-heading"><h1>授权设备</h1></header>
+        <header v-else-if="page === 'devices'" class="page-heading">
+          <div><h1>授权设备</h1><p>查看通过 WispLink CLI 授权的设备。</p></div>
+          <NButton v-if="admin" tag="a" href="/api/v1/admin/agent-bundle">下载 Agent 接入包</NButton>
+        </header>
         <header v-else class="page-heading"><h1>系统设置</h1></header>
 
         <p v-if="error && !modal" class="error" role="alert">{{ error }}</p>
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
 
-        <section v-if="page === 'overview'">
-          <section v-if="admin" class="panel agent-setup">
-            <div><h2>新设备接入</h2><p>把下载的 ZIP 交给本地 Agent，按提示完成浏览器授权。</p></div>
-            <NButton tag="a" href="/api/v1/admin/agent-bundle">下载 Agent 接入包</NButton>
-          </section>
-          <dl class="overview">
-            <div><dt>有效链接</dt><dd>{{ overview.active }}</dd></div>
-            <div><dt>发布总数</dt><dd>{{ overview.total }}</dd></div>
-            <div><dt>累计 PV</dt><dd>{{ overview.pv }}</dd></div>
-            <div><dt>累计 UV</dt><dd>{{ overview.uv }}</dd></div>
-          </dl>
-          <div class="panel recent">
-            <h2>最近过期</h2>
-            <p v-if="!overview.recent_expired.length">暂无过期记录</p>
-            <ul v-else><li v-for="row in overview.recent_expired" :key="row.id">{{ row.filename }} <small>{{ formatDate(row.expires_at) }}</small></li></ul>
+        <section v-if="page === 'overview'" class="dashboard">
+          <div class="dashboard-metrics">
+            <button class="metric-primary" @click="openRecords('active')"><span>有效链接</span><strong>{{ overview.active }}</strong><small>查看有效发布 →</small></button>
+            <button @click="openRecords('paused')"><span>暂停发布</span><strong>{{ overview.paused }}</strong><small>查看待恢复发布 →</small></button>
+            <div><span>累计浏览</span><strong>{{ overview.pv }}</strong><small>{{ overview.total }} 条发布</small></div>
           </div>
+          <section class="panel recent">
+            <header class="section-heading"><h2>最近发布</h2><NButton text @click="openRecords()">全部记录 →</NButton></header>
+            <div v-if="!overview.recent.length" class="empty"><strong>暂无发布</strong><p>上传一份 HTML 即可生成第一条预览链接。</p></div>
+            <ul v-else class="activity">
+              <li v-for="row in overview.recent" :key="row.id">
+                <div><strong>{{ row.filename }}</strong><small>{{ formatDate(row.created_at) }}</small></div>
+                <span class="status" :data-status="row.status">{{ statusLabels[row.status] }}</span>
+                <NButton v-if="row.status === 'active'" text @click="copyRecord(row)">复制链接</NButton>
+              </li>
+            </ul>
+          </section>
         </section>
-        <section v-if="page === 'records'" class="panel">
-          <form class="toolbar" @submit.prevent="findRecords">
-            <input v-model="search" type="search" aria-label="搜索文件名" placeholder="搜索文件名">
-            <select v-model="statusFilter" aria-label="筛选状态" @change="findRecords">
-              <option value="">全部状态</option>
-              <option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option>
-            </select>
-            <NButton attr-type="submit" :loading="busy">搜索</NButton>
-            <span class="summary">本页有效 {{ activeOnPage }} 条</span>
+        <section v-if="page === 'records'" class="panel records-panel">
+          <form class="toolbar record-filters" @submit.prevent="findRecords">
+            <label>文件名<input v-model="search" type="search" maxlength="255" placeholder="搜索文件名"></label>
+            <label>状态<select v-model="statusFilter"><option value="">全部状态</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select></label>
+            <label>来源<select v-model="filters.source"><option value="">全部来源</option><option value="web">网页版</option><option value="cli">CLI / Agent</option><option value="unknown">历史记录</option></select></label>
+            <label>Agent 客户端<input v-model="filters.agent_name" maxlength="120" placeholder="例如 Codex"></label>
+            <label>设备名称<input v-model="filters.device_name" maxlength="120" placeholder="搜索设备名称"></label>
+            <label v-if="admin">发布者<input v-model="filters.owner" maxlength="80" placeholder="搜索账号"></label>
+            <label>排序<select v-model="filters.sort"><option value="newest">最新发布</option><option value="oldest">最早发布</option><option value="expires">最早到期</option><option value="views">浏览最多</option></select></label>
+            <div class="filter-actions"><NButton type="primary" attr-type="submit" :loading="busy">筛选</NButton><NButton @click="openRecords()">重置</NButton></div>
           </form>
+          <div v-if="selected.length" class="selection-bar" role="status">
+            <strong>已选 {{ selected.length }} 条</strong>
+            <NButton size="small" :disabled="!canBatchPause" @click="showOperation('pause')">批量暂停</NButton>
+            <NButton size="small" :disabled="!canBatchResume" @click="showOperation('resume')">批量恢复</NButton>
+            <NButton size="small" :disabled="!canBatchClose" @click="showOperation('close')">批量关闭</NButton>
+            <NButton size="small" :disabled="!canBatchDelete" @click="showOperation('delete')">批量删除</NButton>
+            <NButton text @click="selected = []">取消选择</NButton>
+          </div>
           <div v-if="records.length" class="table-scroll">
             <table>
-              <thead><tr><th>文件</th><th v-if="admin">发布者</th><th>状态</th><th>到期时间</th><th>PV</th><th>UV</th><th>IP 名额</th><th>操作</th></tr></thead>
+              <thead><tr><th><input type="checkbox" :disabled="busy" aria-label="选择本页全部记录" :checked="allSelected" :indeterminate.prop="!!selected.length && !allSelected" @change="selected = $event.target.checked ? records.map(row => row.id) : []"></th><th>文件</th><th v-if="admin">发布者</th><th>Agent 客户端</th><th>设备名称</th><th>状态</th><th>到期时间</th><th>浏览 / 访客</th><th>IP 名额</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="row in records" :key="row.id">
-                  <td><strong>{{ row.filename }}</strong><small>发布于 {{ formatDate(row.created_at) }}</small><small v-if="row.path_note">{{ row.path_note }}</small></td>
+                  <td><input v-model="selected" type="checkbox" :disabled="busy" :value="row.id" :aria-label="'选择 ' + row.filename"></td>
+                  <td><strong :title="row.filename">{{ row.filename }}</strong><small>{{ formatDate(row.created_at) }}</small><small v-if="row.path_note" :title="row.path_note">{{ row.path_note }}</small></td>
                   <td v-if="admin">{{ row.owner }}</td>
+                  <td>{{ row.agent_name || ({ web: '网页版', cli: 'CLI', unknown: '—' }[row.source]) }}</td>
+                  <td>{{ row.device_name || '—' }}</td>
                   <td><span class="status" :data-status="row.status">{{ statusLabels[row.status] }}</span></td>
-                  <td>{{ formatDate(row.expires_at) }}<small v-if="remaining(row)">{{ remaining(row) }}</small></td><td>{{ row.pv }}</td><td>{{ row.uv }}</td><td>{{ row.ip_count }} / {{ row.max_ips }}</td>
+                  <td>{{ row.status === 'paused' ? '待重新设置' : formatDate(row.expires_at) }}<small v-if="remaining(row)">{{ remaining(row) }}</small></td>
+                  <td>{{ row.pv }} / {{ row.uv }}</td><td>{{ row.ip_count }} / {{ row.max_ips }}</td>
                   <td class="actions">
-                    <button @click="copyRecord(row)">复制链接</button>
+                    <button v-if="['active', 'paused'].includes(row.status)" @click="copyRecord(row)">复制链接</button>
                     <button v-if="row.status === 'active'" @click="showExpiry(row)">修改到期</button>
-                    <button v-if="row.status === 'active'" @click="modal = { kind: 'close', row }">关闭</button>
-                    <button v-else @click="modal = { kind: 'delete', row }">删除记录</button>
+                    <button v-if="row.status === 'active'" @click="showOperation('pause', row)">暂停</button>
+                    <button v-if="row.status === 'paused'" @click="showOperation('resume', row)">恢复</button>
+                    <button v-if="['active', 'paused'].includes(row.status)" @click="showOperation('close', row)">关闭</button>
+                    <button v-else @click="showOperation('delete', row)">删除</button>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <div v-else class="empty"><strong>{{ search ? '没有匹配的记录' : '还没有发布记录' }}</strong></div>
-          <div v-if="offset || more" class="pagination">
-            <NButton :disabled="!offset" @click="changePage(-1)">上一页</NButton>
-            <NButton :disabled="!more" @click="changePage(1)">下一页</NButton>
-          </div>
+          <div v-else class="empty"><strong>没有符合条件的记录</strong></div>
+          <footer class="pagination">
+            <span>共 {{ total }} 条 · 第 {{ displayedPage }} / {{ pageCount }} 页</span>
+            <label>每页 <select v-model.number="pageSize" @change="findRecords"><option :value="20">20</option><option :value="50">50</option><option :value="100">100</option></select></label>
+            <NButton :disabled="!offset || busy" @click="changePage(-1)">上一页</NButton>
+            <NButton :disabled="displayedPage >= pageCount || busy" @click="changePage(1)">下一页</NButton>
+          </footer>
         </section>
 
         <section v-if="page === 'new'" class="panel narrow">
@@ -445,10 +520,10 @@ watch(modal, async (value) => {
 
         <section v-if="page === 'devices'" class="panel table-scroll">
           <table v-if="devices.length">
-            <thead><tr><th>设备授权</th><th>账号</th><th>权限</th><th>最近换取凭证</th><th>操作</th></tr></thead>
+            <thead><tr><th>设备</th><th>Agent 客户端</th><th>账号</th><th>最近使用</th><th>操作</th></tr></thead>
             <tbody><tr v-for="row in devices" :key="row.id">
-              <td><strong>{{ row.id.slice(0, 8) }}</strong><small>{{ formatDate(row.created_at * 1000) }}</small></td>
-              <td>{{ row.username }}</td><td>{{ row.scope }}</td><td>{{ formatDate(row.last_used_at * 1000) }}</td>
+              <td><strong>{{ row.device_name || '旧版授权 · ' + row.id.slice(0, 8) }}</strong><small>{{ row.device_model || '型号未提供' }}</small></td>
+              <td>{{ row.agent_name || '—' }}</td><td>{{ row.username }}</td><td>{{ formatDate(row.last_used_at * 1000) }}</td>
               <td class="actions"><button @click="modal = { kind: 'device', row }">撤销</button></td>
             </tr></tbody>
           </table>
@@ -463,7 +538,7 @@ watch(modal, async (value) => {
         </form>
       </main>
 
-      <dialog ref="dialog" @close="modal = null">
+      <dialog ref="dialog" aria-label="WispLink 操作" @cancel="busy && $event.preventDefault()" @close="modal = null">
         <div v-if="modal" class="dialog-inner">
           <p v-if="error" class="error" role="alert">{{ error }}</p>
           <form v-if="modal.kind === 'expiry'" class="form" @submit.prevent="updateRecord">
@@ -471,6 +546,13 @@ watch(modal, async (value) => {
             <ExpiryFields v-model="editor" :capped="Boolean(settings.max_days)" />
             <small v-if="editor.mode === 'preset'">预设时长从现在开始计算。</small>
             <div class="dialog-actions"><NButton @click="modal = null">取消</NButton><NButton attr-type="submit" type="primary" :loading="busy">保存</NButton></div>
+          </form>
+          <form v-else-if="modal.kind === 'resume'" class="form" @submit.prevent="updateRecord">
+            <h2>恢复发布</h2><p>{{ modal.row ? modal.row.filename : '对选中的 ' + selected.length + ' 条发布使用相同设置' }}</p>
+            <ExpiryFields v-model="editor" :capped="Boolean(settings.max_days)" />
+            <label>独立公网 IP 名额<input v-model.number="resumeIps" type="number" min="1" max="10000" placeholder="请重新输入 IP 名额" required></label>
+            <small>原有 IP 记录继续计入新名额。恢复后沿用原链接。</small>
+            <div class="dialog-actions"><NButton :disabled="busy" @click="modal = null">取消</NButton><NButton attr-type="submit" type="primary" :loading="busy">恢复发布</NButton></div>
           </form>
           <form v-else-if="modal.kind === 'account'" class="form" @submit.prevent="saveAccount">
             <h2>{{ modal.row ? '编辑账号' : '新建账号' }}</h2>
@@ -500,9 +582,10 @@ watch(modal, async (value) => {
             <NButton @click="modal = null">完成</NButton>
           </div>
           <form v-else class="form" @submit.prevent="updateRecord">
-            <h2>{{ modal.kind === 'close' ? '关闭预览链接？' : '删除历史记录？' }}</h2>
-            <p>{{ modal.row.filename }}。{{ modal.kind === 'close' ? '关闭后将立即停止访问。' : '此操作无法撤销。' }}</p>
-            <div class="dialog-actions"><NButton @click="modal = null">取消</NButton><NButton attr-type="submit" type="error" :loading="busy">确认</NButton></div>
+            <h2>{{ operationLabels[modal.kind] }}？</h2>
+            <p>{{ modal.row ? modal.row.filename : '已选择 ' + selected.length + ' 条发布' }}</p>
+            <small>{{ { pause: '链接将暂停访问，服务器会保留 HTML。', close: '链接将永久关闭，服务器会清理 HTML。', delete: '发布记录将永久删除。' }[modal.kind] }}</small>
+            <div class="dialog-actions"><NButton :disabled="busy" @click="modal = null">取消</NButton><NButton attr-type="submit" :type="modal.kind === 'pause' ? 'primary' : 'error'" :loading="busy">{{ operationLabels[modal.kind] }}</NButton></div>
           </form>
         </div>
       </dialog>

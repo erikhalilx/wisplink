@@ -6,9 +6,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import case, delete, func, insert, select, update
 
-from .db import audit, preferences, publishes, users, write_transaction
+from .db import audit, devices, preferences, publishes, users, write_transaction
 from .expiry import PRESETS, ExpiryChoice, timestamp
-from .security import digest, token
+from .security import device_label, digest, token
 from .service import (
     actor,
     inspect_html,
@@ -72,6 +72,8 @@ def public_record(row, state, now):
             "id",
             "owner_id",
             "filename",
+            "device_name",
+            "agent_name",
             "path_note",
             "size",
             "max_ips",
@@ -86,6 +88,7 @@ def public_record(row, state, now):
         max(0, row["expires_at"] - now) if row["expires_at"] is not None else None
     )
     result["status"] = publication_status(row, now, state.settings.uploads / row["id"])
+    result["source"] = "cli" if row.get("source_cli") else "web" if row.get("source_cli") is False else "unknown"
     result["purged"] = row["purged_at"] is not None
     if "username" in row:
         result["owner"] = (
@@ -134,6 +137,9 @@ def publish(
     expiry: Annotated[str, Form(max_length=256)],
     max_ips: Annotated[int, Form(ge=1, le=10000)] = 10,
     path_note: Annotated[str | None, Form(max_length=4096)] = None,
+    device_name: Annotated[str | None, Form(max_length=120)] = None,
+    device_model: Annotated[str | None, Form(max_length=120)] = None,
+    agent_name: Annotated[str | None, Form(max_length=120)] = None,
 ):
     state = request.app.state
     settings = state.settings
@@ -173,16 +179,7 @@ def publish(
             )
             if hour_count >= policy["hourly_limit"]:
                 raise HTTPException(429, "达到每小时发布上限。")
-            active_count = connection.scalar(
-                select(func.count())
-                .select_from(publishes)
-                .where(
-                    same_owner,
-                    publishes.c.closed_at.is_(None),
-                    publishes.c.missing.is_(False),
-                    (publishes.c.expires_at.is_(None) | (publishes.c.expires_at > now)),
-                )
-            )
+            active_count = count_active(connection, user["id"], now)
             size = connection.scalar(
                 select(func.coalesce(func.sum(publishes.c.size), 0)).where(
                     same_owner,
@@ -195,11 +192,29 @@ def publish(
                 or size + len(data) > policy["storage_limit_mb"] * 1048576
             ):
                 raise HTTPException(409, "达到账号的发布数量或空间上限。")
+            device_id = user.get("device_id")
+            identity = {}
+            if device_id:
+                identity = {
+                    key: device_label(value)
+                    for key, value in (
+                        ("device_name", device_name), ("device_model", device_model), ("agent_name", agent_name)
+                    )
+                }
+                connection.execute(
+                    update(devices).where(devices.c.id == device_id).values(
+                        last_used_at=now, **{key: value for key, value in identity.items() if value}
+                    )
+                )
             row = dict(
                 id=publish_id,
                 owner_id=user["id"],
                 filename=filename,
                 path_note=path_note,
+                source_cli=bool(device_id),
+                device_name=identity.get("device_name") or user.get("device_name"),
+                agent_name=identity.get("agent_name"),
+                paused_at=None,
                 token_digest=digest(secret),
                 encrypted_token=state.cipher.encrypt(secret.encode()),
                 created_at=now,
@@ -232,7 +247,12 @@ def publish(
 def list_publishes(
     request: Request,
     search: str = Query(default="", max_length=255),
-    status: Literal["active", "expired", "closed", "missing"] | None = None,
+    status: Literal["active", "paused", "expired", "closed", "missing"] | None = None,
+    source: Literal["web", "cli", "unknown"] | None = None,
+    agent_name: str = Query(default="", max_length=120),
+    device_name: str = Query(default="", max_length=120),
+    owner: str = Query(default="", max_length=80),
+    sort: Literal["newest", "oldest", "expires", "views"] = "newest",
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
@@ -251,19 +271,35 @@ def list_publishes(
             statement = statement.where(
                 publishes.c.filename.contains(search, autoescape=True)
             )
+        for term, column in (
+            (agent_name, publishes.c.agent_name), (device_name, publishes.c.device_name),
+            (owner, users.c.username),
+        ):
+            if term:
+                statement = statement.where(column.contains(term, autoescape=True))
+        if source:
+            source_cli = {"cli": True, "web": False, "unknown": None}[source]
+            statement = statement.where(publishes.c.source_cli.is_(source_cli))
+        order = {
+            "newest": publishes.c.created_at.desc(),
+            "oldest": publishes.c.created_at.asc(),
+            "expires": publishes.c.expires_at.asc().nulls_last(),
+            "views": publishes.c.pv.desc(),
+        }[sort]
+        total = connection.scalar(select(func.count()).select_from(statement.subquery()))
         rows = (
             connection.execute(
-                statement.order_by(publishes.c.created_at.desc(), publishes.c.id)
+                statement.order_by(order, publishes.c.id)
                 .offset(offset)
-                .limit(limit + 1)
+                .limit(limit)
             )
             .mappings()
             .all()
         )
-        now = now_seconds()
         return {
-            "items": [public_record(row, state, now) for row in rows[:limit]],
-            "has_more": len(rows) > limit,
+            "items": [public_record(row, state, now) for row in rows],
+            "total": total,
+            "has_more": offset + len(rows) < total,
         }
 
 
@@ -309,44 +345,111 @@ def edit_expiry(publish_id: str, request: Request, form: ExpiryChoice):
         return public_record({**row, "expires_at": expires_at}, state, now)
 
 
-@router.post("/publishes/{publish_id}/close")
-def close(publish_id: str, request: Request):
+class ResumeOptions(BaseModel):
+    expiry: ExpiryChoice
+    max_ips: int = Field(ge=1, le=10000)
+
+
+class BatchOptions(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=100)
+    action: Literal["pause", "resume", "close", "delete"]
+    resume: ResumeOptions | None = None
+
+
+def count_active(connection, owner_id, now):
+    return connection.scalar(
+        select(func.count()).select_from(publishes).where(
+            publishes.c.owner_id == owner_id, status_expression(now) == "active"
+        )
+    )
+
+
+def change_publication(connection, state, user, publish_id, action, now, options=None):
+    row = owned(connection, publish_id, user)
+    status = publication_status(row, now, state.settings.uploads / publish_id)
+    if action == "pause" and status == "active":
+        values = {"paused_at": now}
+    elif action == "resume" and status == "paused" and options is not None:
+        if options.max_ips < row["ip_count"]:
+            raise HTTPException(422, "IP 名额不能低于已登记的 IP 数。")
+        policy = publish_policy(connection, state.settings)
+        if count_active(connection, row["owner_id"], now) >= policy["active_limit"]:
+            raise HTTPException(409, "达到账号的有效发布上限。")
+        values = {
+            "paused_at": None,
+            "max_ips": options.max_ips,
+            "expires_at": resolve_expiry(options.expiry, now, row["created_at"], policy["max_days"]),
+        }
+    elif action == "close" and status in ("active", "paused"):
+        values = {"closed_at": now, "paused_at": None}
+    elif action == "close":
+        return public_record(row, state, now)
+    elif action == "delete" and status not in ("active", "paused"):
+        connection.execute(delete(publishes).where(publishes.c.id == publish_id))
+        logged(connection, user["id"], "publish.delete", publish_id, now)
+        return None
+    else:
+        raise HTTPException(409, "发布状态已变化，或不支持此操作。")
+    connection.execute(update(publishes).where(publishes.c.id == publish_id).values(**values))
+    logged(connection, user["id"], f"publish.{action}", publish_id, now)
+    return public_record({**row, **values}, state, now)
+
+
+def apply_changes(request, ids, action, options=None):
     state = request.app.state
+    ids = list(dict.fromkeys(ids))
     with write_transaction(state.engine) as connection:
         user = actor(connection, request)
-        row = owned(connection, publish_id, user)
         now = now_seconds()
-        if publication_status(row, now) == "active":
-            connection.execute(
-                update(publishes)
-                .where(publishes.c.id == publish_id)
-                .values(closed_at=now)
-            )
-            logged(connection, user["id"], "publish.close", publish_id, now)
-            row = {**row, "closed_at": now}
-        return public_record(row, state, now)
+        rows = [
+            change_publication(connection, state, user, publish_id, action, now, options)
+            for publish_id in ids
+        ]
+    if action == "delete":
+        # Cleanup removes any orphaned file if unlinking fails after committing.
+        for publish_id in ids:
+            try:
+                (state.settings.uploads / publish_id).unlink(missing_ok=True)
+            except OSError:
+                pass
+    return rows
+
+
+@router.post("/publishes/batch")
+def batch(request: Request, form: BatchOptions):
+    if form.action == "resume" and form.resume is None:
+        raise HTTPException(422, "请为恢复发布设置有效期和 IP 名额。")
+    rows = apply_changes(request, form.ids, form.action, form.resume)
+    return {"updated": len(rows)}
+
+
+@router.post("/publishes/{publish_id}/pause")
+def pause(publish_id: str, request: Request):
+    return apply_changes(request, [publish_id], "pause")[0]
+
+
+@router.post("/publishes/{publish_id}/resume")
+def resume(publish_id: str, request: Request, form: ResumeOptions):
+    return apply_changes(request, [publish_id], "resume", form)[0]
+
+
+@router.post("/publishes/{publish_id}/close")
+def close(publish_id: str, request: Request):
+    return apply_changes(request, [publish_id], "close")[0]
 
 
 @router.delete("/publishes/{publish_id}", status_code=204)
 def delete_record(publish_id: str, request: Request):
-    state = request.app.state
-    with write_transaction(state.engine) as connection:
-        user = actor(connection, request)
-        row = owned(connection, publish_id, user)
-        now = now_seconds()
-        if (
-            publication_status(row, now, state.settings.uploads / publish_id)
-            == "active"
-        ):
-            raise HTTPException(409, "请先关闭预览链接。")
-        (state.settings.uploads / publish_id).unlink(missing_ok=True)
-        connection.execute(delete(publishes).where(publishes.c.id == publish_id))
-        logged(connection, user["id"], "publish.delete", publish_id, now)
+    apply_changes(request, [publish_id], "delete")
 
 
 def status_expression(now):
     return case(
         (publishes.c.closed_at.is_not(None), "closed"),
+        (
+            publishes.c.paused_at.is_not(None),
+            case((publishes.c.missing.is_(True), "missing"), else_="paused"),
+        ),
         (publishes.c.expires_at <= now, "expired"),
         (publishes.c.missing.is_(True), "missing"),
         else_="active",
@@ -369,6 +472,7 @@ def overview(request: Request):
                     func.coalesce(
                         func.sum(case((status == "active", 1), else_=0)), 0
                     ).label("active"),
+                    func.coalesce(func.sum(case((status == "paused", 1), else_=0)), 0).label("paused"),
                     func.coalesce(func.sum(publishes.c.pv), 0).label("pv"),
                     func.coalesce(func.sum(publishes.c.uv), 0).label("uv"),
                 ).where(allowed)
@@ -376,24 +480,19 @@ def overview(request: Request):
             .mappings()
             .one()
         )
-        expired = (
+        recent = (
             connection.execute(
                 select(publishes)
-                .where(
-                    allowed,
-                    status == "expired",
-                )
-                .order_by(publishes.c.expires_at.desc())
-                .limit(5)
+                .where(allowed)
+                .order_by(publishes.c.created_at.desc(), publishes.c.id)
+                .limit(6)
             )
             .mappings()
             .all()
         )
     return {
         **totals,
-        "recent_expired": [
-            public_record(row, request.app.state, now) for row in expired
-        ],
+        "recent": [public_record(row, request.app.state, now) for row in recent],
     }
 
 
