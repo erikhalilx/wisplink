@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-**0.2 系列适配范围** · 本地 Apple 芯片 Mac（macOS），服务器为阿里云 ECS + Alibaba Cloud Linux 3.2104 LTS（x86_64）。
+**0.2 系列适配范围** · 本地 Agent 和 CLI 适配 Apple 芯片 Mac（macOS），服务器适配阿里云服务器。使用其他配置的阿里云服务器部署时，可能需要由 Agent 根据实际环境进行额外适配。
 
 自托管的单文件 HTML 预览发布工具。用 Web 或 macOS CLI 发布，访客打开链接即查看 HTML。预览在独立站点通过浏览器沙箱展示，并按公网 IP 限制访问。
 
@@ -30,9 +30,9 @@
 
 从上方链接重新导入 Skill。GitHub 上的更新不会替换 Mac 上已有的副本。兼容的 CLI 可以继续使用；如果希望获取同版本的更新源码，请让 Agent 检查 `uv` 和实际使用的 CLI 路径，再按 Skill 里的命令重装，保留现有配置和授权。
 
-## 首次部署到阿里云 ECS
+## 首次部署到阿里云服务器
 
-如果还没有 WispLink 实例，可让 Agent 按照 [阿里云 ECS 部署指南](deploy/AGENT-SETUP.md) 准备域名与证书，并使用同版本的部署脚本。
+如果还没有 WispLink 实例，可让 Agent 按照 [阿里云服务器部署指南](deploy/AGENT-SETUP.md) 准备域名与证书，并使用同版本的部署脚本。
 
 ## 本地运行
 
