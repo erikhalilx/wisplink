@@ -4,7 +4,7 @@
 
 **0.2 compatibility** · Apple silicon Mac (macOS) for the local Agent and CLI, and an Alibaba Cloud server for deployment. Deployments on Alibaba Cloud servers with other configurations may require additional Agent-led adaptation for the actual environment.
 
-WispLink is a self-hosted service for sharing single-file HTML previews. Publish from the web console or the macOS CLI. Opening a link displays the HTML directly. The browser runs the preview in a sandbox on a separate site, with access limited by public IP.
+WispLink is a self-hosted HTML page publishing tool for temporarily sharing AI-generated reports, web prototypes, and presentation pages. It generates preview links in one step, with customizable expiration times and access limits by public IP. Deploy it on an Alibaba Cloud server and operate it from a web browser or a Mac Agent/CLI.
 
 ## Connect to an existing WispLink instance with an Agent
 
